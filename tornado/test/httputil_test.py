@@ -384,50 +384,30 @@ Content-Disposition: form-data; name="files"; filename="ab.txt"
 
 
 class HTTPHeadersTest(unittest.TestCase):
-    def test_multi_line(self):
-        # Lines beginning with whitespace are appended to the previous line
-        # with any leading whitespace replaced by a single space.
-        # Note that while multi-line headers are a part of the HTTP spec,
-        # their use is strongly discouraged.
-        data = """\
-Foo: bar
- baz
-Asdf: qwer
-\tzxcv
-Foo: even
-     more
-     lines
-""".replace(
-            "\n", "\r\n"
-        )
-        headers = HTTPHeaders.parse(data)
-        self.assertEqual(headers["asdf"], "qwer zxcv")
-        self.assertEqual(headers.get_list("asdf"), ["qwer zxcv"])
-        self.assertEqual(headers["Foo"], "bar baz,even more lines")
-        self.assertEqual(headers.get_list("foo"), ["bar baz", "even more lines"])
-        self.assertEqual(
-            sorted(list(headers.get_all())),
-            [("Asdf", "qwer zxcv"), ("Foo", "bar baz"), ("Foo", "even more lines")],
-        )
-        # Verify case insensitivity in-operator
-        self.assertTrue("asdf" in headers)
-        self.assertTrue("Asdf" in headers)
-
-    def test_continuation(self):
+    def test_folding_rejected(self):
         data = "Foo: bar\r\n\tasdf"
-        headers = HTTPHeaders.parse(data)
-        self.assertEqual(headers["Foo"], "bar asdf")
+        with self.assertRaises(HTTPInputError):
+            # Folded continuation lines are not supported.
+            HTTPHeaders.parse(data)
 
-        # If the first line starts with whitespace, it's a
-        # continuation line with nothing to continue, so reject it
-        # (with a proper error).
-        data = " Foo: bar"
-        self.assertRaises(HTTPInputError, HTTPHeaders.parse, data)
-
-        # \f (formfeed) is whitespace according to str.isspace, but
-        # not according to the HTTP spec.
-        data = "Foo: bar\r\n\fasdf"
-        self.assertRaises(HTTPInputError, HTTPHeaders.parse, data)
+    def test_many_folded_lines_rejected(self):
+        # A header block made mostly of continuation lines used to be joined
+        # one line at a time (quadratic in the number of lines). It must now
+        # be rejected at the first continuation line, whether the folding
+        # uses spaces or tabs.
+        for ws in (" ", "\t"):
+            with self.subTest(ws=repr(ws)):
+                data = "Foo: bar\r\n" + (ws + "x\r\n") * 100000
+                with self.assertRaises(HTTPInputError) as cm:
+                    HTTPHeaders.parse(data)
+                self.assertIn("folding not supported", str(cm.exception))
+                headers = HTTPHeaders()
+                headers.parse_line("Foo: bar")
+                with self.assertRaises(HTTPInputError):
+                    headers.parse_line(ws + "x")
+                # The rejected continuation line is not appended to the
+                # previous header.
+                self.assertEqual(headers.get_list("Foo"), ["bar"])
 
     def test_forbidden_ascii_characters(self):
         # Control characters and ASCII whitespace other than space, tab, and CRLF are not allowed in

@@ -47,6 +47,12 @@ class CurlHTTPClientCommonTestCase(httpclient_test.HTTPClientCommonTestCase):
     # not we listed it in Accept-Encoding, so brotli is reachable whenever
     # libcurl was built with it (which is common).
     decompresses_brotli = pycurl is not None and "brotli" in pycurl.version
+    # libcurl still accepts obsolete line folding in response headers: since
+    # 8.18.0 it unfolds them before calling the header callback. Older versions
+    # pass the continuation lines through, which curl_httpclient rejects.
+    supports_line_folding = (
+        pycurl is not None and pycurl.version_info()[2] >= 0x081200
+    )
 
     def get_http_client(self):
         client = CurlAsyncHTTPClient(defaults=dict(allow_ipv6=False))
