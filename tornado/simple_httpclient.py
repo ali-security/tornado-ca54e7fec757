@@ -276,7 +276,7 @@ class _HTTPConnection(httputil.HTTPMessageDelegate):
         self.max_body_size = max_body_size
         self.code = None  # type: Optional[int]
         self.headers = None  # type: Optional[httputil.HTTPHeaders]
-        self.chunks = []  # type: List[bytes]
+        self.chunks = bytearray()
         self._decompressor = None
         # Timeout handle returned by IOLoop.add_timeout
         self._timeout = None  # type: object
@@ -621,7 +621,7 @@ class _HTTPConnection(httputil.HTTPMessageDelegate):
 
     def finish(self) -> None:
         assert self.code is not None
-        data = b"".join(self.chunks)
+        data = bytes(self.chunks)
         self._remove_timeout()
         original_request = getattr(self.request, "original_request", self.request)
         if self._should_follow_redirect():
@@ -730,7 +730,7 @@ class _HTTPConnection(httputil.HTTPMessageDelegate):
         if self.request.streaming_callback is not None:
             self.request.streaming_callback(chunk)
         else:
-            self.chunks.append(chunk)
+            self.chunks += chunk
 
 
 if __name__ == "__main__":
