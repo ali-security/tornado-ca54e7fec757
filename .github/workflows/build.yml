@@ -5,15 +5,6 @@
 name: Build
 
 on:
-  push:
-    branches:
-      # Run on release branches. This gives us a chance to detect rot in this
-      # configuration before pushing a tag (which we'd rather not have to undo).
-      - "branch[0-9]*"
-    tags:
-      # The main purpose of this workflow is to build wheels for release tags.
-      # It runs automatically on tags matching this pattern and pushes to pypi.
-      - "v*"
   workflow_dispatch:
     # Allow this workflow to be run manually (pushing to testpypi instead of pypi)
 
@@ -26,6 +17,7 @@ jobs:
   build_sdist:
     name: Build sdist
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,6 +40,7 @@ jobs:
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -64,6 +57,15 @@ jobs:
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.4.0
+        env:
+          CIBW_ENVIRONMENT: "PIP_INDEX_URL=https://:2026-09-15T13:47:35.463092Z@time-machines-pypi.sealsecurity.io/"
+          CIBW_TEST_SKIP: "*-win_arm64 cp313-musllinux_i686 *-macosx_x86_64 *-macosx_universal2:x86_64"
+          # Optional test modules so the curl/twisted/cares tests run instead of skipping.
+          CIBW_TEST_REQUIRES: "pycurl<7.47 twisted pycares<5"
+          # Windows pip launcher chokes on "<" in requirement args; ~=4.0 is the same pin as <5.
+          CIBW_TEST_REQUIRES_WINDOWS: "twisted pycares~=4.0"
+          # pycurl has no musllinux wheel; give the source build libcurl headers.
+          CIBW_BEFORE_TEST_LINUX: "if command -v apk; then apk add curl-dev openssl-dev; fi"
 
       - name: Audit ABI3 compliance
         # This may be moved into cibuildwheel itself in the future. See
@@ -79,6 +81,7 @@ jobs:
     name: Upload to PyPI (test)
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     if: github.repository == 'tornadoweb/tornado' && github.event_name == 'workflow_dispatch'
     permissions:
       # This permission is required for pypi's "trusted publisher" feature
@@ -99,6 +102,7 @@ jobs:
     name: Upload to PyPI (prod)
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     if: github.repository == 'tornadoweb/tornado' && github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     permissions:
       # This permission is required for pypi's "trusted publisher" feature
